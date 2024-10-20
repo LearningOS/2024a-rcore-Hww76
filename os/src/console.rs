@@ -18,7 +18,7 @@ pub fn print(args: fmt::Arguments) {
 }
 
 /// Print! to the host console using the format string and arguments.
-#[macro_export]
+#[macro_export] // 声明下面的内容为宏
 macro_rules! print {
     ($fmt: literal $(, $($arg: tt)+)?) => {
         $crate::console::print(format_args!($fmt $(, $($arg)+)?))
