@@ -47,22 +47,22 @@ impl UserStack {
     }
 }
 
-struct AppManager {
+struct AppManager { // 应用程序组管理
     num_app: usize,
     current_app: usize,
     app_start: [usize; MAX_APP_NUM + 1],
 }
 
 impl AppManager {
-    pub fn print_app_info(&self) {
-        println!("[kernel] num_app = {}", self.num_app);
+    pub fn print_app_info(&self) { // 打印应用信息
+        println!("[kernel] num_app = {}", self.num_app); // 个数
         for i in 0..self.num_app {
             println!(
                 "[kernel] app_{} [{:#x}, {:#x})",
                 i,
                 self.app_start[i],
                 self.app_start[i + 1]
-            );
+            ); // 每个程序的其实位置和结束位置
         }
     }
 
@@ -74,12 +74,12 @@ impl AppManager {
         }
         println!("[kernel] Loading app_{}", app_id);
         // clear app area
-        core::slice::from_raw_parts_mut(APP_BASE_ADDRESS as *mut u8, APP_SIZE_LIMIT).fill(0);
-        let app_src = core::slice::from_raw_parts(
+        unsafe { core::slice::from_raw_parts_mut(APP_BASE_ADDRESS as *mut u8, APP_SIZE_LIMIT).fill(0) };
+        let app_src = unsafe { core::slice::from_raw_parts(
             self.app_start[app_id] as *const u8,
             self.app_start[app_id + 1] - self.app_start[app_id],
-        );
-        let app_dst = core::slice::from_raw_parts_mut(APP_BASE_ADDRESS as *mut u8, app_src.len());
+        ) };
+        let app_dst = unsafe { core::slice::from_raw_parts_mut(APP_BASE_ADDRESS as *mut u8, app_src.len()) };
         app_dst.copy_from_slice(app_src);
         // Memory fence about fetching the instruction memory
         // It is guaranteed that a subsequent instruction fetch must
