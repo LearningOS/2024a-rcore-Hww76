@@ -14,9 +14,10 @@ mod switch;
 #[allow(clippy::module_inception)]
 mod task;
 
-use crate::config::MAX_APP_NUM;
+use crate::config::{MAX_APP_NUM, MAX_SYSCALL_NUM};
 use crate::loader::{get_num_app, init_app_cx};
 use crate::sync::UPSafeCell;
+use crate::timer::get_time_ms;
 use lazy_static::*;
 use switch::__switch;
 pub use task::{TaskControlBlock, TaskStatus};
@@ -49,17 +50,20 @@ pub struct TaskManagerInner {
 
 lazy_static! {
     /// Global variable: TASK_MANAGER
-    pub static ref TASK_MANAGER: TaskManager = {
+    pub static ref TASK_MANAGER: TaskManager = { // 创建进程管理模块
         let num_app = get_num_app();
-        let mut tasks = [TaskControlBlock {
+        let mut tasks = [TaskControlBlock {  // 为每个进程控制块附初值
             task_cx: TaskContext::zero_init(),
             task_status: TaskStatus::UnInit,
+            syscall_times: [0; MAX_SYSCALL_NUM], // 设置系统调用次数
+            first_run: false,
+            first_run_time: 0,
         }; MAX_APP_NUM];
-        for (i, task) in tasks.iter_mut().enumerate() {
+        for (i, task) in tasks.iter_mut().enumerate() { // 分配进程控制流，设置进程状态
             task.task_cx = TaskContext::goto_restore(init_app_cx(i));
             task.task_status = TaskStatus::Ready;
         }
-        TaskManager {
+        TaskManager { // 为进程管理块附初值
             num_app,
             inner: unsafe {
                 UPSafeCell::new(TaskManagerInner {
@@ -80,6 +84,8 @@ impl TaskManager {
         let mut inner = self.inner.exclusive_access();
         let task0 = &mut inner.tasks[0];
         task0.task_status = TaskStatus::Running;
+        task0.first_run = true;
+        task0.first_run_time = get_time_ms(); // 获取第一次运行时间
         let next_task_cx_ptr = &task0.task_cx as *const TaskContext;
         drop(inner);
         let mut _unused = TaskContext::zero_init();
@@ -119,10 +125,15 @@ impl TaskManager {
     /// or there is no `Ready` task and we can exit with all applications completed
     fn run_next_task(&self) {
         if let Some(next) = self.find_next_task() {
-            let mut inner = self.inner.exclusive_access();
-            let current = inner.current_task;
-            inner.tasks[next].task_status = TaskStatus::Running;
-            inner.current_task = next;
+            let mut inner = self.inner.exclusive_access(); 
+            let current = inner.current_task; //获取当前正在运行的进程id
+            inner.tasks[next].task_status = TaskStatus::Running; // 修改进程状态
+            inner.current_task = next; // 修改当前正在运行的进程id
+
+            if inner.tasks[inner.current_task].first_run == false{ // 如果next进程首次运行，记录运行时间
+                inner.tasks[next].first_run = true;
+                inner.tasks[next].first_run_time = get_time_ms();
+            }
             let current_task_cx_ptr = &mut inner.tasks[current].task_cx as *mut TaskContext;
             let next_task_cx_ptr = &inner.tasks[next].task_cx as *const TaskContext;
             drop(inner);
@@ -168,4 +179,23 @@ pub fn suspend_current_and_run_next() {
 pub fn exit_current_and_run_next() {
     mark_current_exited();
     run_next_task();
+}
+
+/// Return current task
+pub fn get_current_task() -> usize{
+    TASK_MANAGER.inner.exclusive_access().current_task
+}
+
+/// Update syscall times when task call syscall.
+pub fn update_task_syscall_times(syscall_id: usize) {
+    let mut inner = TASK_MANAGER.inner.exclusive_access();
+    let current = inner.current_task; // 找到当前正在运行的进程
+    inner.tasks[current].syscall_times[syscall_id] += 1; // 更新调用次数
+}
+
+/// Get task control block
+pub fn get_task_node() -> TaskControlBlock{
+    let inner = TASK_MANAGER.inner.exclusive_access();
+    let current = inner.current_task;
+    inner.tasks[current].clone()
 }
