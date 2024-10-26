@@ -11,18 +11,18 @@ use lazy_static::*;
 /// tracker for physical page frame allocation and deallocation
 pub struct FrameTracker {
     /// physical page number
-    pub ppn: PhysPageNum,
+    pub ppn: PhysPageNum, // 物理页号记录了页帧的起始地址
 }
 
 impl FrameTracker {
     /// Create a new FrameTracker
     pub fn new(ppn: PhysPageNum) -> Self {
         // page cleaning
-        let bytes_array = ppn.get_bytes_array();
-        for i in bytes_array {
+        let bytes_array = ppn.get_bytes_array(); // 获取物理页帧的所有权
+        for i in bytes_array { // 预防页帧被使用过，进行初始化
             *i = 0;
         }
-        Self { ppn }
+        Self { ppn } // 将所有权转移，也延长了ppn的声明周期，直到页表声明周期结束才释放
     }
 }
 
@@ -44,7 +44,7 @@ trait FrameAllocator {
     fn dealloc(&mut self, ppn: PhysPageNum);
 }
 /// an implementation for frame allocator
-pub struct StackFrameAllocator {
+pub struct StackFrameAllocator { // 分配页帧的栈,[current,end)内按页帧大小分配
     current: usize,
     end: usize,
     recycled: Vec<usize>,
@@ -57,7 +57,7 @@ impl StackFrameAllocator {
         // trace!("last {} Physical Frames.", self.end - self.current);
     }
 }
-impl FrameAllocator for StackFrameAllocator {
+impl FrameAllocator for StackFrameAllocator { // 实现 FrameAllocator Trait
     fn new() -> Self {
         Self {
             current: 0,
@@ -65,17 +65,17 @@ impl FrameAllocator for StackFrameAllocator {
             recycled: Vec::new(),
         }
     }
-    fn alloc(&mut self) -> Option<PhysPageNum> {
-        if let Some(ppn) = self.recycled.pop() {
+    fn alloc(&mut self) -> Option<PhysPageNum> { // 寻找空闲帧分配
+        if let Some(ppn) = self.recycled.pop() { // 回收栈中有
             Some(ppn.into())
-        } else if self.current == self.end {
+        } else if self.current == self.end { 
             None
-        } else {
+        } else { // 未分配过的区间内有
             self.current += 1;
             Some((self.current - 1).into())
         }
     }
-    fn dealloc(&mut self, ppn: PhysPageNum) {
+    fn dealloc(&mut self, ppn: PhysPageNum) { // 物理帧回收
         let ppn = ppn.0;
         // validity check
         if ppn >= self.current || self.recycled.iter().any(|&v| v == ppn) {
@@ -99,13 +99,13 @@ pub fn init_frame_allocator() {
         fn ekernel();
     }
     FRAME_ALLOCATOR.exclusive_access().init(
-        PhysAddr::from(ekernel as usize).ceil(),
+        PhysAddr::from(ekernel as usize).ceil(), // 从内核空间的下一个页帧开始可以分配
         PhysAddr::from(MEMORY_END).floor(),
     );
 }
 
 /// Allocate a physical page frame in FrameTracker style
-pub fn frame_alloc() -> Option<FrameTracker> {
+pub fn frame_alloc() -> Option<FrameTracker> { // 对外暴露的接口
     FRAME_ALLOCATOR
         .exclusive_access()
         .alloc()
@@ -113,7 +113,7 @@ pub fn frame_alloc() -> Option<FrameTracker> {
 }
 
 /// Deallocate a physical page frame with a given ppn
-pub fn frame_dealloc(ppn: PhysPageNum) {
+pub fn frame_dealloc(ppn: PhysPageNum) { // 对外暴露的接口
     FRAME_ALLOCATOR.exclusive_access().dealloc(ppn);
 }
 

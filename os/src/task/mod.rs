@@ -14,8 +14,11 @@ mod switch;
 #[allow(clippy::module_inception)]
 mod task;
 
+use crate::config::MAX_SYSCALL_NUM;
 use crate::loader::{get_app_data, get_num_app};
+use crate::mm::{MapPermission, VirtAddr, VirtPageNum};
 use crate::sync::UPSafeCell;
+use crate::timer::get_time;
 use crate::trap::TrapContext;
 use alloc::vec::Vec;
 use lazy_static::*;
@@ -79,6 +82,8 @@ impl TaskManager {
         let mut inner = self.inner.exclusive_access();
         let next_task = &mut inner.tasks[0];
         next_task.task_status = TaskStatus::Running;
+        next_task.first_run = true;
+        next_task.first_run_time = get_time();
         let next_task_cx_ptr = &next_task.task_cx as *const TaskContext;
         drop(inner);
         let mut _unused = TaskContext::zero_init();
@@ -141,6 +146,10 @@ impl TaskManager {
             let current = inner.current_task;
             inner.tasks[next].task_status = TaskStatus::Running;
             inner.current_task = next;
+            if inner.tasks[current].first_run == false {
+                inner.tasks[current].first_run = true;
+                inner.tasks[current].first_run_time = get_time();
+            }
             let current_task_cx_ptr = &mut inner.tasks[current].task_cx as *mut TaskContext;
             let next_task_cx_ptr = &inner.tasks[next].task_cx as *const TaskContext;
             drop(inner);
@@ -153,6 +162,54 @@ impl TaskManager {
             panic!("All applications completed!");
         }
     }
+}
+
+/// Update syscall times when task call syscall.
+pub fn update_task_syscall_times(syscall_id: usize) {
+    let mut inner = TASK_MANAGER.inner.exclusive_access();
+    let current = inner.current_task; // 找到当前正在运行的进程
+    inner.tasks[current].syscall_times[syscall_id] += 1; // 更新调用次数
+}
+
+/// insert framed area
+pub fn insert_framed_area(start_va: VirtAddr, end_va: VirtAddr, permission: MapPermission) -> bool {
+    let result = true;
+    let current = TASK_MANAGER.inner.exclusive_access().current_task;
+    TASK_MANAGER.inner.exclusive_access().tasks[current].memory_set.insert_framed_area(start_va, end_va, permission);
+    result
+}
+
+/// 删除虚拟页
+pub fn unmap_in_memset(start_va: VirtAddr,end_va: VirtAddr){
+    let current = TASK_MANAGER.inner.exclusive_access().current_task;
+    TASK_MANAGER.inner.exclusive_access().tasks[current].memory_set.unmap(start_va.floor(),end_va.floor());
+}
+
+/// find page pte in memory_set,找到返回true
+pub fn find_page_pte(start_vpn: VirtPageNum, end_vpn: VirtPageNum) -> bool{
+    let mut result = false;
+    let current = TASK_MANAGER.inner.exclusive_access().current_task;
+    let mut vpn: VirtPageNum = start_vpn;
+    while vpn <= end_vpn{
+        if TASK_MANAGER.inner.exclusive_access().tasks[current].memory_set.find_vpn_in_areas(vpn.into()){
+            result = true;
+            break;
+        }
+        vpn.0 += 1;
+    }
+    result
+}
+
+/// Get sys call times
+pub fn get_current_task_syscall_times() -> [u32;MAX_SYSCALL_NUM]{
+    let current = TASK_MANAGER.inner.exclusive_access().current_task;
+    TASK_MANAGER.inner.exclusive_access().tasks[current].syscall_times
+}
+
+/// Get sys first run time
+pub fn get_current_task_first_time() -> usize{
+    let current = TASK_MANAGER.inner.exclusive_access().current_task;
+    TASK_MANAGER.inner.exclusive_access().tasks[current].first_run_time
 }
 
 /// Run the first task in task list.

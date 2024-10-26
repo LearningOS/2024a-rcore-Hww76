@@ -78,6 +78,29 @@ impl MemorySet {
             PTEFlags::R | PTEFlags::X,
         );
     }
+    /// unmap 虚拟页区间
+    pub fn unmap(&mut self, start_vpn: VirtPageNum, end_vpn: VirtPageNum){
+        let mut vpn = start_vpn;
+        while vpn <= end_vpn{
+            for i in self.areas.iter_mut(){
+                if i.find_vpn(vpn) {
+                    // println!("unmap = {:?}",vpn);
+                    i.shrink_to(&mut self.page_table, vpn);
+                    vpn.step();
+                    break;
+                }
+            }
+        }
+    }
+    /// 查找areas中是否有存在的页,存在返回true
+    pub fn find_vpn_in_areas(&self, vpn: VirtPageNum) -> bool {
+        for i in &self.areas{
+            if i.find_vpn(vpn) {
+                return true;
+            }
+        }
+        false
+    }
     /// Without kernel stacks.
     pub fn new_kernel() -> Self {
         let mut memory_set = Self::new_bare();
@@ -287,6 +310,15 @@ impl MapArea {
             map_perm,
         }
     }
+    /// 如果MapArea中存在此虚拟页，返回true
+    pub fn find_vpn(&self, vpn: VirtPageNum) -> bool{
+        for i in self.vpn_range{
+            if i == vpn{
+                return true;
+            }
+        }
+        false
+    }
     pub fn map_one(&mut self, page_table: &mut PageTable, vpn: VirtPageNum) {
         let ppn: PhysPageNum;
         match self.map_type {
@@ -378,6 +410,8 @@ bitflags! {
         const U = 1 << 4;
     }
 }
+
+
 
 /// Return (bottom, top) of a kernel stack in kernel space.
 pub fn kernel_stack_position(app_id: usize) -> (usize, usize) {

@@ -10,16 +10,18 @@ const VPN_WIDTH_SV39: usize = VA_WIDTH_SV39 - PAGE_SIZE_BITS;
 
 /// physical address
 #[derive(Copy, Clone, Ord, PartialOrd, Eq, PartialEq)]
-pub struct PhysAddr(pub usize);
+pub struct PhysAddr(pub usize); // 物理地址
 /// virtual address
 #[derive(Copy, Clone, Ord, PartialOrd, Eq, PartialEq)]
-pub struct VirtAddr(pub usize);
+pub struct VirtAddr(pub usize); // 虚拟地址
 /// physical page number
 #[derive(Copy, Clone, Ord, PartialOrd, Eq, PartialEq)]
-pub struct PhysPageNum(pub usize);
+pub struct PhysPageNum(pub usize); // 物理页号
 /// virtual page number
 #[derive(Copy, Clone, Ord, PartialOrd, Eq, PartialEq)]
-pub struct VirtPageNum(pub usize);
+pub struct VirtPageNum(pub usize); // 虚拟页号
+#[derive(Copy, Clone, Ord, PartialOrd, Eq, PartialEq)]
+pub struct Num(pub usize); // 虚拟页号
 
 /// Debugging
 
@@ -47,6 +49,7 @@ impl Debug for PhysPageNum {
 /// T: {PhysAddr, VirtAddr, PhysPageNum, VirtPageNum}
 /// T -> usize: T.0
 /// usize -> T: usize.into()
+
 
 impl From<usize> for PhysAddr {
     fn from(v: usize) -> Self {
@@ -80,8 +83,8 @@ impl From<PhysPageNum> for usize {
 }
 impl From<VirtAddr> for usize {
     fn from(v: VirtAddr) -> Self {
-        if v.0 >= (1 << (VA_WIDTH_SV39 - 1)) {
-            v.0 | (!((1 << VA_WIDTH_SV39) - 1))
+        if v.0 >= (1 << (VA_WIDTH_SV39 - 1)) { // 超出虚拟地址表示范围
+            v.0 | (!((1 << VA_WIDTH_SV39) - 1)) // 将超出范围的位全部置1
         } else {
             v.0
         }
@@ -95,7 +98,7 @@ impl From<VirtPageNum> for usize {
 /// virtual address impl
 impl VirtAddr {
     /// Get the (floor) virtual page number
-    pub fn floor(&self) -> VirtPageNum {
+    pub fn floor(&self) -> VirtPageNum { // 虚拟地址向下取整
         VirtPageNum(self.0 / PAGE_SIZE)
     }
 
@@ -160,11 +163,11 @@ impl VirtPageNum {
     pub fn indexes(&self) -> [usize; 3] {
         let mut vpn = self.0;
         let mut idx = [0usize; 3];
-        for i in (0..3).rev() {
-            idx[i] = vpn & 511;
+        for i in (0..3).rev() { // 下标从大到小
+            idx[i] = vpn & 511; 
             vpn >>= 9;
         }
-        idx
+        idx // PPN[2] PPN[1] PPN[0] 对应 idx[0] idx[1] idx[2] 
     }
 }
 
