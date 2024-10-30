@@ -10,7 +10,7 @@ const INODE_DIRECT_COUNT: usize = 28;
 /// The max length of inode name
 const NAME_LENGTH_LIMIT: usize = 27;
 /// The max number of indirect1 inodes
-const INODE_INDIRECT1_COUNT: usize = BLOCK_SZ / 4;
+const INODE_INDIRECT1_COUNT: usize = BLOCK_SZ / 4; // 1级间接索引块内的索引项数量，block_id只需要4B存储
 /// The max number of indirect2 inodes
 const INODE_INDIRECT2_COUNT: usize = INODE_INDIRECT1_COUNT * INODE_INDIRECT1_COUNT;
 /// The upper bound of direct inode index
@@ -127,7 +127,7 @@ impl DiskInode {
             total += 1;
             // sub indirect1
             total +=
-                (data_blocks - INDIRECT1_BOUND + INODE_INDIRECT1_COUNT - 1) / INODE_INDIRECT1_COUNT;
+                (data_blocks - INDIRECT1_BOUND + INODE_INDIRECT1_COUNT - 1) / INODE_INDIRECT1_COUNT; // 总数据块数-0到1级间接索引能装的块数，向上取整
         }
         total as u32
     }
@@ -322,7 +322,7 @@ impl DiskInode {
         }
         let mut start_block = start / BLOCK_SZ;
         let mut read_size = 0usize;
-        loop {
+        loop { // 当start - end 不是BLOCK_SZ整数倍时，最后一块只读部分
             // calculate end of current block
             let mut end_current_block = (start / BLOCK_SZ + 1) * BLOCK_SZ;
             end_current_block = end_current_block.min(end);

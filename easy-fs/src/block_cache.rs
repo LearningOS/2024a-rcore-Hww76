@@ -4,7 +4,8 @@ use alloc::sync::Arc;
 use lazy_static::*;
 use spin::Mutex;
 /// Cached block inside memory
-pub struct BlockCache {
+/// 单个块的缓存，保存512B
+pub struct BlockCache { 
     /// cached block data
     cache: [u8; BLOCK_SZ],
     /// underlying block id
@@ -28,10 +29,12 @@ impl BlockCache {
         }
     }
     /// Get the address of an offset inside the cached block data
+    /// 获取 offset 处的地址值
     fn addr_of_offset(&self, offset: usize) -> usize {
         &self.cache[offset] as *const _ as usize
     }
 
+    /// 根据 offset 获取数据结构 T 的引用，T的数据结构在运行时获取
     pub fn get_ref<T>(&self, offset: usize) -> &T
     where
         T: Sized,
@@ -53,6 +56,7 @@ impl BlockCache {
         unsafe { &mut *(addr as *mut T) }
     }
 
+    /// read 读取 offset 处的数据结构 T，对 T 的处理在 FnOnce 中定义，最后返回结果 V
     pub fn read<T, V>(&self, offset: usize, f: impl FnOnce(&T) -> V) -> V {
         f(self.get_ref(offset))
     }
@@ -61,6 +65,7 @@ impl BlockCache {
         f(self.get_mut(offset))
     }
 
+    /// 将块缓存写回
     pub fn sync(&mut self) {
         if self.modified {
             self.modified = false;
@@ -70,6 +75,7 @@ impl BlockCache {
 }
 
 impl Drop for BlockCache {
+    /// drop 方法将块写回块设备
     fn drop(&mut self) {
         self.sync()
     }
@@ -78,7 +84,7 @@ impl Drop for BlockCache {
 const BLOCK_CACHE_SIZE: usize = 16;
 
 pub struct BlockCacheManager {
-    queue: VecDeque<(usize, Arc<Mutex<BlockCache>>)>,
+    queue: VecDeque<(usize, Arc<Mutex<BlockCache>>)>, // Arc 实现计数，Mutex 实现互斥共享
 }
 
 impl BlockCacheManager {
@@ -94,10 +100,10 @@ impl BlockCacheManager {
         block_device: Arc<dyn BlockDevice>,
     ) -> Arc<Mutex<BlockCache>> {
         if let Some(pair) = self.queue.iter().find(|pair| pair.0 == block_id) {
-            Arc::clone(&pair.1)
-        } else {
+            Arc::clone(&pair.1) // 返回块的强引用计数，只有当块的强引用计数为1时，遇到drop才真正执行drop数据
+        } else { // 块缓存没有时，从块设备获取
             // substitute
-            if self.queue.len() == BLOCK_CACHE_SIZE {
+            if self.queue.len() == BLOCK_CACHE_SIZE { // 块缓存满时要换入换出块
                 // from front to tail
                 if let Some((idx, _)) = self
                     .queue
@@ -105,7 +111,7 @@ impl BlockCacheManager {
                     .enumerate()
                     .find(|(_, pair)| Arc::strong_count(&pair.1) == 1)
                 {
-                    self.queue.drain(idx..=idx);
+                    self.queue.drain(idx..=idx); // 将没有被使用的块设备移除队列，之后此缓存块会被自动写回块设备
                 } else {
                     panic!("Run out of BlockCache!");
                 }

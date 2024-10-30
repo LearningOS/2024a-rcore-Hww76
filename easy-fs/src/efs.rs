@@ -33,7 +33,7 @@ impl EasyFileSystem {
             ((inode_num * core::mem::size_of::<DiskInode>() + BLOCK_SZ - 1) / BLOCK_SZ) as u32;
         let inode_total_blocks = inode_bitmap_blocks + inode_area_blocks;
         let data_total_blocks = total_blocks - 1 - inode_total_blocks;
-        let data_bitmap_blocks = (data_total_blocks + 4096) / 4097;
+        let data_bitmap_blocks = (data_total_blocks + 4096) / 4097; // 为什么除4097
         let data_area_blocks = data_total_blocks - data_bitmap_blocks;
         let data_bitmap = Bitmap::new(
             (1 + inode_bitmap_blocks + inode_area_blocks) as usize,
@@ -112,7 +112,7 @@ impl EasyFileSystem {
         Inode::new(block_id, block_offset, Arc::clone(efs), block_device)
     }
     /// Get inode by id
-    pub fn get_disk_inode_pos(&self, inode_id: u32) -> (u32, usize) {
+    pub fn get_disk_inode_pos(&self, inode_id: u32) -> (u32, usize) { // 返回对应的块id和块内偏移
         let inode_size = core::mem::size_of::<DiskInode>();
         let inodes_per_block = (BLOCK_SZ / inode_size) as u32;
         let block_id = self.inode_area_start_block + inode_id / inodes_per_block;
@@ -126,7 +126,7 @@ impl EasyFileSystem {
         self.data_area_start_block + data_block_id
     }
     /// Allocate a new inode
-    pub fn alloc_inode(&mut self) -> u32 {
+    pub fn alloc_inode(&mut self) -> u32 { // 在inode_bitmap中注册一个块
         self.inode_bitmap.alloc(&self.block_device).unwrap() as u32
     }
 

@@ -1,7 +1,7 @@
 //! Types related to task management & Functions for completely changing TCB
 use super::TaskContext;
 use super::{kstack_alloc, pid_alloc, KernelStack, PidHandle};
-use crate::config::TRAP_CONTEXT_BASE;
+use crate::config::{BIG_STRIDE, MAX_SYSCALL_NUM, TRAP_CONTEXT_BASE};
 use crate::fs::{File, Stdin, Stdout};
 use crate::mm::{MemorySet, PhysPageNum, VirtAddr, KERNEL_SPACE};
 use crate::sync::UPSafeCell;
@@ -10,6 +10,7 @@ use alloc::sync::{Arc, Weak};
 use alloc::vec;
 use alloc::vec::Vec;
 use core::cell::RefMut;
+use core::cmp::Ordering;
 
 /// Task control block structure
 ///
@@ -36,7 +37,34 @@ impl TaskControlBlock {
         let inner = self.inner_exclusive_access();
         inner.memory_set.token()
     }
+    
 }
+
+impl PartialOrd for TaskControlBlock {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        let self_task_info = self.inner.exclusive_access().task_info;
+        let other_task_info = other.inner.exclusive_access().task_info;
+        other_task_info.stride.partial_cmp(&self_task_info.stride)
+    }
+}
+
+impl PartialEq for TaskControlBlock {
+    fn eq(&self, other: &Self) -> bool {
+        let self_task_info = self.inner.exclusive_access().task_info;
+        let other_task_info = other.inner.exclusive_access().task_info;
+        self_task_info.stride == other_task_info.stride
+    }
+}
+
+impl Ord for TaskControlBlock {
+    fn cmp(&self, other: &Self) -> Ordering {
+        let self_task_info = self.inner.exclusive_access().task_info;
+        let other_task_info = other.inner.exclusive_access().task_info;
+        self_task_info.stride.cmp(&other_task_info.stride)
+    }
+}
+
+impl Eq for TaskControlBlock{}
 
 pub struct TaskControlBlockInner {
     /// The physical page number of the frame where the trap context is placed
@@ -65,6 +93,8 @@ pub struct TaskControlBlockInner {
     /// It is set when active exit or execution error occurs
     pub exit_code: i32,
     pub fd_table: Vec<Option<Arc<dyn File + Send + Sync>>>,
+    /// Task Info
+    pub task_info: TaskInform,
 
     /// Heap bottom
     pub heap_bottom: usize,
@@ -93,6 +123,44 @@ impl TaskControlBlockInner {
             self.fd_table.push(None);
             self.fd_table.len() - 1
         }
+    }
+}
+
+#[derive(Clone, Copy)]
+pub struct TaskInform {
+    /// pass have run
+    pub have_ran: bool,
+    /// The numbers of syscall called by task
+    pub syscall_times: [u32; MAX_SYSCALL_NUM],
+    /// first_run_time_of_task
+    pub first_run_time: usize,
+    /// task prio
+    pub priority: usize,
+    /// task stride
+    pub stride: usize,
+}
+
+impl TaskInform {
+    /// Init of task Info
+    pub fn new() -> Self{
+        Self{
+            have_ran: false,
+            syscall_times: [0;MAX_SYSCALL_NUM],
+            first_run_time: 0,
+            priority: 16,
+            stride: 0,
+        }
+    }
+    pub fn add_sys_call_times(&mut self, syscall_id: usize){
+        self.syscall_times[syscall_id] += 1;
+    }
+    /// 设置优先级
+    pub fn set_priority(&mut self, priority: usize){
+        self.priority = priority;
+    }
+    /// stride += pass
+    pub fn update_stride(&mut self){
+        self.stride += BIG_STRIDE / self.priority;
     }
 }
 
@@ -133,6 +201,7 @@ impl TaskControlBlock {
                         // 2 -> stderr
                         Some(Arc::new(Stdout)),
                     ],
+                    task_info: TaskInform::new(),
                     heap_bottom: user_sp,
                     program_brk: user_sp,
                 })
@@ -214,6 +283,7 @@ impl TaskControlBlock {
                     children: Vec::new(),
                     exit_code: 0,
                     fd_table: new_fd_table,
+                    task_info: TaskInform::new(),
                     heap_bottom: parent_inner.heap_bottom,
                     program_brk: parent_inner.program_brk,
                 })

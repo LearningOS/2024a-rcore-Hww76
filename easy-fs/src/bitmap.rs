@@ -1,9 +1,9 @@
 use super::{get_block_cache, BlockDevice, BLOCK_SZ};
 use alloc::sync::Arc;
 /// A bitmap block
-type BitmapBlock = [u64; 64];
+type BitmapBlock = [u64; 64]; // 512B
 /// Number of bits in a block
-const BLOCK_BITS: usize = BLOCK_SZ * 8;
+const BLOCK_BITS: usize = BLOCK_SZ * 8; // BLOCK_SZ 位数
 /// A bitmap
 pub struct Bitmap {
     start_block_id: usize,
@@ -12,9 +12,9 @@ pub struct Bitmap {
 
 /// Decompose bits into (block_pos, bits64_pos, inner_pos)
 fn decomposition(mut bit: usize) -> (usize, usize, usize) {
-    let block_pos = bit / BLOCK_BITS;
-    bit %= BLOCK_BITS;
-    (block_pos, bit / 64, bit % 64)
+    let block_pos = bit / BLOCK_BITS; // 找到属于哪一块
+    bit %= BLOCK_BITS; // 块内bit位 
+    (block_pos, bit / 64, bit % 64) // bit/64 是行， bit%64 是列
 }
 
 impl Bitmap {
@@ -26,7 +26,7 @@ impl Bitmap {
         }
     }
     /// Allocate a new block from a block device
-    pub fn alloc(&self, block_device: &Arc<dyn BlockDevice>) -> Option<usize> {
+    pub fn alloc(&self, block_device: &Arc<dyn BlockDevice>) -> Option<usize> { // 在bitmap上注册
         for block_id in 0..self.blocks {
             let pos = get_block_cache(
                 block_id + self.start_block_id as usize,
