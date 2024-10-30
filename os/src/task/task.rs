@@ -1,15 +1,14 @@
 //! Types related to task management & Functions for completely changing TCB
-use super::stride::BIG_STRIDE;
 use super::TaskContext;
 use super::{kstack_alloc, pid_alloc, KernelStack, PidHandle};
-use crate::config::{MAX_SYSCALL_NUM, TRAP_CONTEXT_BASE};
+use crate::config::{BIG_STRIDE, MAX_SYSCALL_NUM, TRAP_CONTEXT_BASE};
 use crate::mm::{MemorySet, PhysPageNum, VirtAddr, KERNEL_SPACE};
 use crate::sync::UPSafeCell;
 use crate::trap::{trap_handler, TrapContext};
-use crate::task::Stride;
 use alloc::sync::{Arc, Weak};
 use alloc::vec::Vec;
 use core::cell::RefMut;
+use core::cmp::Ordering;
 
 
 /// Task control block structure
@@ -37,7 +36,34 @@ impl TaskControlBlock {
         let inner = self.inner_exclusive_access();
         inner.memory_set.token()
     }
+    
 }
+
+impl PartialOrd for TaskControlBlock {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        let self_task_info = self.inner.exclusive_access().task_info;
+        let other_task_info = other.inner.exclusive_access().task_info;
+        self_task_info.stride.partial_cmp(&other_task_info.stride)
+    }
+}
+
+impl PartialEq for TaskControlBlock {
+    fn eq(&self, other: &Self) -> bool {
+        let self_task_info = self.inner.exclusive_access().task_info;
+        let other_task_info = other.inner.exclusive_access().task_info;
+        self_task_info.stride == other_task_info.stride
+    }
+}
+
+impl Ord for TaskControlBlock {
+    fn cmp(&self, other: &Self) -> Ordering {
+        let self_task_info = self.inner.exclusive_access().task_info;
+        let other_task_info = other.inner.exclusive_access().task_info;
+        self_task_info.stride.cmp(&other_task_info.stride)
+    }
+}
+
+impl Eq for TaskControlBlock{}
 
 pub struct TaskControlBlockInner {
     /// The physical page number of the frame where the trap context is placed
@@ -106,9 +132,7 @@ pub struct TaskInform {
     /// task prio
     pub priority: usize,
     /// task stride
-    pub stride: Stride,
-    /// task pass
-    pub pass: usize,
+    pub stride: usize,
 }
 
 impl TaskInform {
@@ -119,8 +143,7 @@ impl TaskInform {
             syscall_times: [0;MAX_SYSCALL_NUM],
             first_run_time: 0,
             priority: 16,
-            stride: Stride::new(),
-            pass: BIG_STRIDE/16,
+            stride: 0,
         }
     }
     pub fn add_sys_call_times(&mut self, syscall_id: usize){
@@ -129,11 +152,10 @@ impl TaskInform {
     /// 设置优先级
     pub fn set_priority(&mut self, priority: usize){
         self.priority = priority;
-        self.pass = BIG_STRIDE/self.priority;
     }
     /// stride += pass
     pub fn update_stride(&mut self){
-        self.stride.update(self.pass);
+        self.stride += BIG_STRIDE / self.priority;
     }
 }
 

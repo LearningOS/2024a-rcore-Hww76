@@ -20,12 +20,10 @@ mod processor;
 mod switch;
 #[allow(clippy::module_inception)]
 mod task;
-mod stride;
 
 use crate::loader::get_app_data_by_name;
 use alloc::sync::Arc;
 use lazy_static::*;
-pub use stride::Stride;
 pub use manager::{fetch_task, TaskManager};
 use switch::__switch;
 pub use task::{TaskControlBlock, TaskStatus};

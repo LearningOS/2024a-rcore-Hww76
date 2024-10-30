@@ -67,7 +67,7 @@ pub fn run_tasks() {
                 task_inner.task_info.have_ran = true;
                 task_inner.task_info.first_run_time = get_time();
             }
-                task_inner.task_info.update_stride(); // 更新步长
+            task_inner.task_info.update_stride(); // 更新步长
             // taskinfo更新完毕
             // release coming task_inner manually
             drop(task_inner);
