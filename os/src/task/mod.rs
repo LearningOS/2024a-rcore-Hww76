@@ -113,5 +113,5 @@ lazy_static! {
 
 ///Add init process to the manager
 pub fn add_initproc() {
-    add_task(INITPROC.clone());
+    add_task(INITPROC.clone()); // 这里克隆的我推测是智能指针Arc，待考证。
 }

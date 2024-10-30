@@ -60,6 +60,19 @@ impl MemorySet {
             None,
         );
     }
+    // pub fn remove_vpn_in_area(&mut self,start_vpn: VirtPageNum,end_vpn: VirtPageNum){
+    //     let mut vpn = start_vpn;
+    //     while vpn <= end_vpn{
+    //         if let Some((idx, area)) = self
+    //         .areas
+    //         .iter_mut()
+    //         .enumerate()
+    //         .find(|(_, area)| area.vpn_range.get_start() == start_vpn)
+    //         {
+    //             self.shrink_to(start, new_end)
+    //         }
+    //     }
+    // }
     /// remove a area
     pub fn remove_area_with_start_vpn(&mut self, start_vpn: VirtPageNum) {
         if let Some((idx, area)) = self

@@ -1,13 +1,14 @@
 //! Types related to task management & Functions for completely changing TCB
 use super::TaskContext;
 use super::{kstack_alloc, pid_alloc, KernelStack, PidHandle};
-use crate::config::TRAP_CONTEXT_BASE;
+use crate::config::{MAX_SYSCALL_NUM, TRAP_CONTEXT_BASE};
 use crate::mm::{MemorySet, PhysPageNum, VirtAddr, KERNEL_SPACE};
 use crate::sync::UPSafeCell;
 use crate::trap::{trap_handler, TrapContext};
 use alloc::sync::{Arc, Weak};
 use alloc::vec::Vec;
 use core::cell::RefMut;
+
 
 /// Task control block structure
 ///
@@ -68,6 +69,9 @@ pub struct TaskControlBlockInner {
 
     /// Program break
     pub program_brk: usize,
+
+    /// Task Info
+    pub task_info: TaskInform,
 }
 
 impl TaskControlBlockInner {
@@ -87,6 +91,30 @@ impl TaskControlBlockInner {
     }
 }
 
+#[derive(Clone, Copy)]
+pub struct TaskInform {
+    /// pass have run
+    pub have_ran: bool,
+    /// The numbers of syscall called by task
+    pub syscall_times: [u32; MAX_SYSCALL_NUM],
+    /// first_run_time_of_task
+    pub first_run_time: usize,
+}
+
+impl TaskInform {
+    /// Init of task Info
+    pub fn new() -> Self{
+        Self{
+            have_ran: false,
+            syscall_times: [0;MAX_SYSCALL_NUM],
+            first_run_time: 0,
+        }
+    }
+    pub fn add_sys_call_times(&mut self, syscall_id: usize){
+        self.syscall_times[syscall_id] += 1;
+    }
+}
+
 impl TaskControlBlock {
     /// Create a new process
     ///
@@ -94,6 +122,7 @@ impl TaskControlBlock {
     pub fn new(elf_data: &[u8]) -> Self {
         // memory_set with elf program headers/trampoline/trap context/user stack
         let (memory_set, user_sp, entry_point) = MemorySet::from_elf(elf_data);
+        // important! 通过 usize 转换成虚拟地址，将其转换为ppn
         let trap_cx_ppn = memory_set
             .translate(VirtAddr::from(TRAP_CONTEXT_BASE).into())
             .unwrap()
@@ -118,6 +147,7 @@ impl TaskControlBlock {
                     exit_code: 0,
                     heap_bottom: user_sp,
                     program_brk: user_sp,
+                    task_info: TaskInform::new(),
                 })
             },
         };
@@ -191,6 +221,7 @@ impl TaskControlBlock {
                     exit_code: 0,
                     heap_bottom: parent_inner.heap_bottom,
                     program_brk: parent_inner.program_brk,
+                    task_info: TaskInform::new(),
                 })
             },
         });
@@ -205,6 +236,52 @@ impl TaskControlBlock {
         // **** release child PCB
         // ---- release parent PCB
     }
+
+    /// fn spwan
+    pub fn spawn(self: &Arc<Self>, elf_data: &[u8]) -> Arc<Self> {
+        let mut parent_inner = self.inner_exclusive_access();
+        // memory_set with elf program headers/trampoline/trap context/user stack
+        let (memory_set, user_sp, entry_point) = MemorySet::from_elf(elf_data);
+        let trap_cx_ppn = memory_set
+            .translate(VirtAddr::from(TRAP_CONTEXT_BASE).into())
+            .unwrap()
+            .ppn();
+        // alloc a pid and a kernel stack in kernel space
+        let pid_handle = pid_alloc();
+        let kernel_stack = kstack_alloc();
+        let kernel_stack_top = kernel_stack.get_top();
+        let task_control_block = Arc::new(TaskControlBlock {
+            pid: pid_handle,
+            kernel_stack,
+            inner: unsafe {
+                UPSafeCell::new(TaskControlBlockInner {
+                    trap_cx_ppn,
+                    base_size: user_sp,
+                    task_cx: TaskContext::goto_trap_return(kernel_stack_top),
+                    task_status: TaskStatus::Ready,
+                    memory_set,
+                    parent: Some(Arc::downgrade(self)),
+                    children: Vec::new(),
+                    exit_code: 0,
+                    heap_bottom: user_sp,
+                    program_brk: user_sp,
+                    task_info: TaskInform::new(),
+                })
+            },
+        });
+        // prepare TrapContext in user space
+        let trap_cx = task_control_block.inner_exclusive_access().get_trap_cx();
+        *trap_cx = TrapContext::app_init_context(
+            entry_point,
+            user_sp,
+            KERNEL_SPACE.exclusive_access().token(),
+            kernel_stack_top,
+            trap_handler as usize,
+        );
+        parent_inner.children.push(task_control_block.clone());
+        task_control_block
+    }
+
 
     /// get pid of process
     pub fn getpid(&self) -> usize {

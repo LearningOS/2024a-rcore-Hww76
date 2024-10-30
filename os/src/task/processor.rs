@@ -8,6 +8,7 @@ use super::__switch;
 use super::{fetch_task, TaskStatus};
 use super::{TaskContext, TaskControlBlock};
 use crate::sync::UPSafeCell;
+use crate::timer::get_time;
 use crate::trap::TrapContext;
 use alloc::sync::Arc;
 use lazy_static::*;
@@ -54,13 +55,17 @@ lazy_static! {
 ///Loop `fetch_task` to get the process that needs to run, and switch the process through `__switch`
 pub fn run_tasks() {
     loop {
-        let mut processor = PROCESSOR.exclusive_access();
-        if let Some(task) = fetch_task() {
-            let idle_task_cx_ptr = processor.get_idle_task_cx_ptr();
+        let mut processor = PROCESSOR.exclusive_access(); // 获取processor所有权
+        if let Some(task) = fetch_task() { // 从TaskManager获取队首task指针
+            let idle_task_cx_ptr = processor.get_idle_task_cx_ptr(); // 获取空闲任务的task_context指针
             // access coming task TCB exclusively
             let mut task_inner = task.inner_exclusive_access();
             let next_task_cx_ptr = &task_inner.task_cx as *const TaskContext;
             task_inner.task_status = TaskStatus::Running;
+            if task_inner.task_info.have_ran == false{ // 记录第一次运行时间
+                task_inner.task_info.have_ran = true;
+                task_inner.task_info.first_run_time = get_time();
+            }
             // release coming task_inner manually
             drop(task_inner);
             // release coming task TCB manually

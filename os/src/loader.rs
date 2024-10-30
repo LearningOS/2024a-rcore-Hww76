@@ -11,7 +11,7 @@ pub fn get_num_app() -> usize {
     unsafe { (_num_app as usize as *const usize).read_volatile() }
 }
 /// get applications data
-pub fn get_app_data(app_id: usize) -> &'static [u8] {
+pub fn get_app_data(app_id: usize) -> &'static [u8] { // 获取应用程序的数据
     extern "C" {
         fn _num_app();
     }
