@@ -43,7 +43,7 @@ impl PartialOrd for TaskControlBlock {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
         let self_task_info = self.inner.exclusive_access().task_info;
         let other_task_info = other.inner.exclusive_access().task_info;
-        self_task_info.stride.partial_cmp(&other_task_info.stride)
+        other_task_info.stride.partial_cmp(&self_task_info.stride)
     }
 }
 
