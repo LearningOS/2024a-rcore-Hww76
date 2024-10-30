@@ -1,10 +1,12 @@
 //! Types related to task management & Functions for completely changing TCB
+use super::stride::BIG_STRIDE;
 use super::TaskContext;
 use super::{kstack_alloc, pid_alloc, KernelStack, PidHandle};
 use crate::config::{MAX_SYSCALL_NUM, TRAP_CONTEXT_BASE};
 use crate::mm::{MemorySet, PhysPageNum, VirtAddr, KERNEL_SPACE};
 use crate::sync::UPSafeCell;
 use crate::trap::{trap_handler, TrapContext};
+use crate::task::Stride;
 use alloc::sync::{Arc, Weak};
 use alloc::vec::Vec;
 use core::cell::RefMut;
@@ -91,6 +93,8 @@ impl TaskControlBlockInner {
     }
 }
 
+
+
 #[derive(Clone, Copy)]
 pub struct TaskInform {
     /// pass have run
@@ -99,6 +103,12 @@ pub struct TaskInform {
     pub syscall_times: [u32; MAX_SYSCALL_NUM],
     /// first_run_time_of_task
     pub first_run_time: usize,
+    /// task prio
+    pub priority: usize,
+    /// task stride
+    pub stride: Stride,
+    /// task pass
+    pub pass: usize,
 }
 
 impl TaskInform {
@@ -108,10 +118,22 @@ impl TaskInform {
             have_ran: false,
             syscall_times: [0;MAX_SYSCALL_NUM],
             first_run_time: 0,
+            priority: 16,
+            stride: Stride::new(),
+            pass: BIG_STRIDE/16,
         }
     }
     pub fn add_sys_call_times(&mut self, syscall_id: usize){
         self.syscall_times[syscall_id] += 1;
+    }
+    /// 设置优先级
+    pub fn set_priority(&mut self, priority: usize){
+        self.priority = priority;
+        self.pass = BIG_STRIDE/self.priority;
+    }
+    /// stride += pass
+    pub fn update_stride(&mut self){
+        self.stride.update(self.pass);
     }
 }
 

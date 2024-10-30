@@ -62,10 +62,13 @@ pub fn run_tasks() {
             let mut task_inner = task.inner_exclusive_access();
             let next_task_cx_ptr = &task_inner.task_cx as *const TaskContext;
             task_inner.task_status = TaskStatus::Running;
+            // 更新taskinfo
             if task_inner.task_info.have_ran == false{ // 记录第一次运行时间
                 task_inner.task_info.have_ran = true;
                 task_inner.task_info.first_run_time = get_time();
             }
+                task_inner.task_info.update_stride(); // 更新步长
+            // taskinfo更新完毕
             // release coming task_inner manually
             drop(task_inner);
             // release coming task TCB manually
