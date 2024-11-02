@@ -10,7 +10,7 @@ use alloc::sync::Arc;
 use lazy_static::*;
 ///A array of `TaskControlBlock` that is thread-safe
 pub struct TaskManager {
-    ready_vector: BinaryHeap<Arc<TaskControlBlock>>,
+    ready_heap: BinaryHeap<Arc<TaskControlBlock>>,
 }
 
 /// A simple FIFO scheduler.
@@ -18,31 +18,17 @@ impl TaskManager {
     ///Creat an empty TaskManager
     pub fn new() -> Self {
         Self {
-            ready_vector: BinaryHeap::new(),
+            ready_heap: BinaryHeap::new(),
         }
     }
     /// Add process back to ready queue
     pub fn add(&mut self, task: Arc<TaskControlBlock>) {
         // self.ready_queue.push_back(task);
-        self.ready_vector.push(task);
+        self.ready_heap.push(task);
     }
     /// Take a process out of the ready queue
     pub fn fetch(&mut self) -> Option<Arc<TaskControlBlock>> {
-        // self.ready_heap.pop()
-        // if self.ready_vector.len() == 0{
-        //     return None;
-        // }
-        // let mut min_stride = MAX;
-        // let mut min_stride_task_idx = 0;
-        // for i in 0..self.ready_vector.len(){
-        //     let current_stride = self.ready_vector[i].inner_exclusive_access().task_info.stride;
-        //     if current_stride < min_stride{
-        //         min_stride = current_stride;
-        //         min_stride_task_idx = i;
-        //     }
-        // }
-        // Some(self.ready_vector.remove(min_stride_task_idx))
-        self.ready_vector.pop()
+        self.ready_heap.pop()
     }
 }
 
