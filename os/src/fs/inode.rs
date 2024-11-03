@@ -4,6 +4,9 @@
 //!
 //! `UPSafeCell<OSInodeInner>` -> `OSInode`: for static `ROOT_INODE`,we
 //! need to wrap `OSInodeInner` into `UPSafeCell`
+
+use core::cell::RefMut;
+
 use super::{File, Stat};
 use crate::drivers::BLOCK_DEVICE;
 use crate::mm::UserBuffer;
@@ -26,6 +29,7 @@ pub struct OSInode {
 pub struct OSInodeInner {
     offset: usize,
     inode: Arc<Inode>,
+    pub stat: Stat,
 }
 
 impl OSInode {
@@ -34,7 +38,7 @@ impl OSInode {
         Self {
             readable,
             writable,
-            inner: unsafe { UPSafeCell::new(OSInodeInner { offset: 0, inode }) },
+            inner: unsafe { UPSafeCell::new(OSInodeInner { offset: 0, inode , stat: Stat::new(),}) },
         }
     }
     /// read all data from the inode
@@ -51,6 +55,10 @@ impl OSInode {
             v.extend_from_slice(&buffer[..len]);
         }
         v
+    }
+    /// Get the mutable reference of the inner OSInode
+    pub fn inner_exclusive_access(&self) -> RefMut<'_, OSInodeInner> {
+        self.inner.exclusive_access()
     }
 }
 
@@ -124,15 +132,24 @@ pub fn open_file(name: &str, flags: OpenFlags) -> Option<Arc<OSInode>> {
     }
 }
 
-/// get stat
-pub fn get_stat(fd: usize){
-    let stat = Stat::new();
-    stat.mode = 
+/// find inode_id by name
+pub fn find_inode_id(name: &str) -> Option<u32>{
+    ROOT_INODE.find_inode_id_by_name(name)
+}
+
+/// update nlink num by inode number
+pub fn update_nlink(ino: u64) -> u32{ // 暂时还没获取到inode
+    ROOT_INODE.nlink_num(ino)
 }
 
 /// Link file
 pub fn link_file(old_name: &str, new_name: &str) -> Option<u32>{
     ROOT_INODE.link(old_name, new_name)
+}
+
+/// unLink file
+pub fn unlink_file(name: &str) -> Option<u32>{
+    ROOT_INODE.unlink(name)
 }
 
 impl File for OSInode {
@@ -165,5 +182,8 @@ impl File for OSInode {
             total_write_size += write_size;
         }
         total_write_size
+    }
+    fn fstat(&self) -> Stat {
+        self.inner.exclusive_access().stat
     }
 }

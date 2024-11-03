@@ -5,7 +5,9 @@ use super::{
 use alloc::string::String;
 use alloc::sync::Arc;
 use alloc::vec::Vec;
+use log::error;
 use spin::{Mutex, MutexGuard};
+extern crate log;
 /// Virtual filesystem layer over easy-fs
 pub struct Inode {
     block_id: usize,
@@ -58,6 +60,27 @@ impl Inode {
         }
         None
     }
+    /// count fd num
+    pub  fn nlink_num(&self, ino: u64) -> u32{
+        let op = |disk_inode: &DiskInode| {
+            assert!(disk_inode.is_dir());
+            let file_count = (disk_inode.size as usize) / DIRENT_SZ;
+            let mut dirent = DirEntry::empty();
+            let mut cnt = 0;
+            for i in 0..file_count {
+                assert_eq!(
+                    disk_inode.read_at(DIRENT_SZ * i, dirent.as_bytes_mut(), &self.block_device,),
+                    DIRENT_SZ,
+                );
+                if dirent.inode_id() == ino as u32{
+                    cnt += 1;
+                }
+            }
+            cnt 
+        };
+        let cnt = self.read_disk_inode(op);
+        cnt 
+    }
     /// Find inode under current inode by name
     pub fn find(&self, name: &str) -> Option<Arc<Inode>> {
         let fs = self.fs.lock();
@@ -73,6 +96,13 @@ impl Inode {
             })
         })
     }
+    /// Find inode_id unber current inode by name
+    pub fn find_inode_id_by_name(&self, name: &str) -> Option<u32> {
+        self.read_disk_inode(|disk_inode| {
+            self.find_inode_id(name, disk_inode)
+        })
+    }
+
     /// Increase the size of a disk inode
     fn increase_size(
         &self,
@@ -137,6 +167,80 @@ impl Inode {
             self.block_device.clone(),
         )))
         // release efs lock automatically by compiler
+    }
+    /// make new file_entry from oldname , 返回原文件的inode_id
+    pub fn link(&self, _old_name: &str, _new_name: &str) -> Option<u32>{
+        let mut fs = self.fs.lock();
+        let op = |root_inode: &DiskInode| {
+            // assert it is a directory
+            assert!(root_inode.is_dir());
+            // has the file been created?
+            self.find_inode_id(_old_name, root_inode)
+        };
+        // 获取原文件的inode_id
+        if let Some(inode_id) = self.read_disk_inode(op){
+            // 在root_inode中添加项
+            // initialize inode
+            self.modify_disk_inode(|root_inode| {
+                // append file in the dirent
+                let file_count = (root_inode.size as usize) / DIRENT_SZ;
+                let new_size = (file_count + 1) * DIRENT_SZ;
+                // increase size
+                self.increase_size(new_size as u32, root_inode, &mut fs);
+                // write dirent
+                let dirent = DirEntry::new(_new_name, inode_id);
+                root_inode.write_at(
+                    file_count * DIRENT_SZ,
+                    dirent.as_bytes(),
+                    &self.block_device,
+                );
+            });
+            block_cache_sync_all();
+            // return inode_id
+            Some(inode_id)
+            // release efs lock automatically by compiler
+        }else{ // 原文件id不存在
+            return None;
+        }
+    }
+    /// unlink
+    pub fn unlink(&self, name: &str) -> Option<u32>{
+        let op = |disk_inode: &DiskInode| {
+            assert!(disk_inode.is_dir());
+            let file_count = (disk_inode.size as usize) / DIRENT_SZ;
+            let mut dirent = DirEntry::empty();
+            let mut idx = 0;
+            for i in 0..file_count {
+                assert_eq!(
+                    disk_inode.read_at(DIRENT_SZ * i, dirent.as_bytes_mut(), &self.block_device,),
+                    DIRENT_SZ,
+                );
+                if dirent.name() == name{
+                    idx = i;
+                }
+            }
+            Some(idx)
+        };
+        // 获取原文件的inode_id
+        if let Some(entry_idx) = self.read_disk_inode(op){
+            // 在root_inode中添加项
+            // initialize inode
+            self.modify_disk_inode(|root_inode| {
+                // write dirent
+                let dirent = DirEntry::empty();
+                root_inode.write_at(
+                    entry_idx * DIRENT_SZ,
+                    dirent.as_bytes(),
+                    &self.block_device,
+                );
+            });
+            block_cache_sync_all();
+            // return inode_id
+            Some(0)
+            // release efs lock automatically by compiler
+        }else{ // 原文件id不存在
+            return None;
+        }
     }
     /// List inodes under current inode
     pub fn ls(&self) -> Vec<String> {

@@ -1,5 +1,8 @@
 //! File and filesystem-related syscalls
-use crate::fs::{link_file, open_file, OSInode, OpenFlags, Stat};
+use core::slice::from_raw_parts;
+
+
+use crate::fs::{find_inode_id, link_file, open_file, unlink_file, update_nlink, OpenFlags, Stat, StatMode};
 use crate::mm::{translated_byte_buffer, translated_str, UserBuffer};
 use crate::task::{current_task, current_user_token};
 
@@ -54,6 +57,11 @@ pub fn sys_open(path: *const u8, flags: u32) -> isize {
     if let Some(inode) = open_file(path.as_str(), OpenFlags::from_bits(flags).unwrap()) {
         let mut inner = task.inner_exclusive_access();
         let fd = inner.alloc_fd();
+        // 更新stat
+        let mut osinode_inner = inode.inner_exclusive_access();
+        osinode_inner.stat.ino = find_inode_id(&path).unwrap() as u64;
+        osinode_inner.stat.mode = StatMode::FILE;
+        drop(osinode_inner);
         inner.fd_table[fd] = Some(inode);
         fd as isize
     } else {
@@ -81,10 +89,20 @@ pub fn sys_fstat(_fd: usize, _st: *mut Stat) -> isize {
         "kernel:pid[{}] sys_fstat",
         current_task().unwrap().pid.0
     );
-    let token = current_user_token();
     let current = current_task().unwrap();
     let inner = current.inner_exclusive_access();
-    let stat = get_stat();
+    let osinode = inner.fd_table[_fd].as_ref().unwrap();
+    let mut stat = osinode.fstat();
+    stat.nlink = update_nlink(stat.ino);
+    drop(inner);
+    let buffers = &mut translated_byte_buffer(current_user_token(), _st as *const u8, core::mem::size_of::<Stat>());
+    let tmp_st_ptr = &stat as *const Stat as *const u8;
+    let mut count = 0;
+    for buffer in buffers.iter_mut() {
+            unsafe { buffer.copy_from_slice(from_raw_parts(tmp_st_ptr.add(count), buffer.len()) ); };
+            count += buffer.len();
+    }
+    0
 }
 
 /// YOUR JOB: Implement linkat.
@@ -109,5 +127,7 @@ pub fn sys_unlinkat(_name: *const u8) -> isize {
         "kernel:pid[{}] sys_unlinkat NOT IMPLEMENTED",
         current_task().unwrap().pid.0
     );
-    -1
+    let token = current_user_token();
+    let name = translated_str(token, _name);
+    unlink_file(&name).unwrap() as isize
 }
