@@ -152,6 +152,8 @@ impl TaskUserRes {
         alloc_user_res: bool,
     ) -> Self {
         let tid = process.inner_exclusive_access().alloc_tid();
+        debug!("new tid is {}",tid);
+        process.inner_exclusive_access().finish.push(false); // somls tid加入，多一个待分配资源的线程
         let task_user_res = Self {
             tid,
             ustack_base,

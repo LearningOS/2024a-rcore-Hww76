@@ -1,11 +1,13 @@
+use core::slice::from_raw_parts;
+
 use crate::{
     config::MAX_SYSCALL_NUM,
     fs::{open_file, OpenFlags},
-    mm::{translated_ref, translated_refmut, translated_str},
+    mm::{translated_byte_buffer, translated_ref, translated_refmut, translated_str},
     task::{
         current_process, current_task, current_user_token, exit_current_and_run_next, pid2process,
         suspend_current_and_run_next, SignalFlags, TaskStatus,
-    },
+    }, timer::get_time,
 };
 use alloc::{string::String, sync::Arc, vec::Vec};
 
@@ -34,6 +36,9 @@ pub fn sys_exit(exit_code: i32) -> ! {
         "kernel:pid[{}] sys_exit",
         current_task().unwrap().process.upgrade().unwrap().getpid()
     );
+    // 当前线程结束，finish设置为true
+    let tid = current_task().unwrap().inner_exclusive_access().res.as_ref().unwrap().tid;
+    current_process().inner_exclusive_access().finish[tid] = true;
     exit_current_and_run_next(exit_code);
     panic!("Unreachable in sys_exit!");
 }
@@ -164,10 +169,21 @@ pub fn sys_kill(pid: usize, signal: u32) -> isize {
 /// HINT: What if [`TimeVal`] is splitted by two pages ?
 pub fn sys_get_time(_ts: *mut TimeVal, _tz: usize) -> isize {
     trace!(
-        "kernel:pid[{}] sys_get_time NOT IMPLEMENTED",
-        current_task().unwrap().process.upgrade().unwrap().getpid()
+        "kernel:pid[{}] sys_get_time",current_task().unwrap().process.upgrade().unwrap().getpid()
     );
-    -1
+    let us = get_time();
+    let buffers = &mut translated_byte_buffer(current_user_token(), _ts as *const u8, core::mem::size_of::<TimeVal>());
+    let tmp_ts = TimeVal {
+        sec: us / 1_000_000,
+        usec: us % 1_000_000,
+    };
+    let tmp_ts_ptr = &tmp_ts as *const TimeVal as *const u8;
+    let mut count = 0;
+    for buffer in buffers.iter_mut() {
+            unsafe { buffer.copy_from_slice(from_raw_parts(tmp_ts_ptr.add(count), buffer.len()) ); };
+            count += buffer.len();
+    }
+    0
 }
 
 /// task_info syscall

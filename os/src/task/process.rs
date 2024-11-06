@@ -49,6 +49,16 @@ pub struct ProcessControlBlockInner {
     pub semaphore_list: Vec<Option<Arc<Semaphore>>>,
     /// condvar list
     pub condvar_list: Vec<Option<Arc<Condvar>>>,
+    /// 银行家算法资源
+    pub deadlock_detect: bool,
+    /// 可以分配的资源数量
+    pub work: Vec<u32>, 
+    /// 已经分配的资源数量
+    pub allocated: Vec<Vec<u32>>,
+    /// 线程需要的资源数量
+    pub need: Vec<Vec<u32>>,
+    /// 线程完成情况
+    pub finish: Vec<bool>,
 }
 
 impl ProcessControlBlockInner {
@@ -119,6 +129,11 @@ impl ProcessControlBlock {
                     mutex_list: Vec::new(),
                     semaphore_list: Vec::new(),
                     condvar_list: Vec::new(),
+                    deadlock_detect: false,
+                    work: Vec::new(),
+                    allocated: vec![vec![0;10];10],
+                    need: vec![vec![0;10];10],
+                    finish: Vec::new(),
                 })
             },
         });
@@ -245,6 +260,11 @@ impl ProcessControlBlock {
                     mutex_list: Vec::new(),
                     semaphore_list: Vec::new(),
                     condvar_list: Vec::new(),
+                    deadlock_detect: false,
+                    work: Vec::new(),
+                    allocated: vec![vec![0;10];10],
+                    need: vec![vec![0;10];10],
+                    finish: Vec::new(),
                 })
             },
         });
